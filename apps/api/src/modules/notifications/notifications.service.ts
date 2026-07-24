@@ -18,7 +18,7 @@ export class NotificationsService {
         title: dto.title,
         message: dto.message,
         type: dto.type,
-        data: (dto.data ?? undefined) as Prisma.JsonValue | undefined,
+        data: (dto.data ?? undefined) as Prisma.InputJsonValue | undefined,
       },
     });
 

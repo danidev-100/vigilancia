@@ -20,7 +20,7 @@ export class AuditLogService {
         action: params.action,
         entityType: params.entityType,
         entityId: params.entityId ?? null,
-        details: (params.details ?? undefined) as Prisma.JsonValue | undefined,
+        details: (params.details ?? undefined) as Prisma.InputJsonValue | undefined,
         ipAddress: params.ipAddress ?? null,
       },
     });
