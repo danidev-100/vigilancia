@@ -1,0 +1,44 @@
+# OpenSpec Configuration — Vigilancia
+# Private Neighborhood Security Management System
+# Generated: 2026-07-24
+
+context: |
+  Private Neighborhood Security Management System.
+  Monorepo (pnpm workspaces): apps/web, apps/api, packages/shared, packages/db.
+  Frontend: React 19 + TypeScript + Tailwind CSS + shadcn/ui + TanStack Query + RHF + Zod.
+  Backend: NestJS + Prisma ORM + PostgreSQL (Neon).
+  Auth: JWT + Refresh Tokens + OAuth (Google) + RBAC.
+  Storage: Cloudinary. Notifications: FCM. Realtime: Socket.IO WebSockets.
+  Deploy: Vercel (FE+BE), Neon PostgreSQL, Cloudinary.
+
+strict_tdd: false
+
+testing:
+  runner: null
+  runner_command: null
+  unit: { available: false, tool: null }
+  integration: { available: false, tool: null }
+  e2e: { available: false, tool: null }
+  coverage: { available: false, command: null }
+  linter: { available: false, command: null }
+  type_checker: { available: false, command: null }
+  formatter: { available: false, command: null }
+  note: "Greenfield project — no packages installed yet. Planned: Vitest (frontend), Jest (NestJS), Playwright (E2E). Install via pnpm before enabling strict_tdd."
+
+phases:
+  propose:
+    auto_skip_if: "change_type == 'refactor' && scope == 'internal'"
+  spec:
+    required_sections: [scenarios, acceptance_criteria]
+  design:
+    required_sections: [architecture, data_flow, component_tree]
+  tasks:
+    max_task_size: 100
+  apply:
+    review_budget: 800
+    pr_strategy: auto-forecast
+  verify:
+    run_tests: false
+    note: "Enable run_tests once test runner is configured."
+  archive:
+    keep_delta_specs: true

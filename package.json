@@ -1,0 +1,18 @@
+{
+  "name": "vigilancia",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private Neighborhood Security Management System",
+  "scripts": {
+    "dev:api": "pnpm --filter @vigilancia/api dev",
+    "dev:web": "pnpm --filter @vigilancia/web dev",
+    "build": "pnpm -r build",
+    "db:generate": "pnpm --filter @vigilancia/db generate",
+    "db:push": "pnpm --filter @vigilancia/db push",
+    "db:migrate": "pnpm --filter @vigilancia/db migrate",
+    "db:studio": "pnpm --filter @vigilancia/db studio"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
