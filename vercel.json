@@ -2,8 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm build",
   "installCommand": "pnpm install",
-  "framework": null,
-  "outputDirectory": "dist",
+  "framework": "vite",
+  "outputDirectory": "apps/web/dist",
   "git": {
     "deploymentEnabled": {
       "main": true
