@@ -6,7 +6,7 @@
   "scripts": {
     "dev:api": "pnpm --filter @vigilancia/api dev",
     "dev:web": "pnpm --filter @vigilancia/web dev",
-    "build": "pnpm -r build",
+    "build": "pnpm db:generate && pnpm -r build",
     "db:generate": "pnpm --filter @vigilancia/db generate",
     "db:push": "pnpm --filter @vigilancia/db push",
     "db:migrate": "pnpm --filter @vigilancia/db migrate",

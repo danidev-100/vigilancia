@@ -1,10 +1,12 @@
-// Prisma Schema — Vigilancia
-// Private Neighborhood Security Management System
+// ============================================================
+// Vigilancia — Private Neighborhood Security Management System
+// Prisma Schema v1.0
+// ============================================================
 
 generator client {
-  provider      = "prisma-client-js"
-  output        = "../node_modules/.prisma/client"
-  engineType    = "binary"
+  provider        = "prisma-client-js"
+  engineType      = "binary"
+  previewFeatures = ["fullTextSearchPostgres"]
 }
 
 datasource db {
@@ -12,289 +14,436 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─── Auth & Users ───────────────────────────────────────────────
+// ============================================================
+// ENUMS
+// ============================================================
 
 enum Role {
   ADMIN
-  GUARD
-  RESIDENT
-  VISITOR
+  SECURITY_GUARD
+  PROPERTY_OWNER
 }
 
-model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  phone        String?
-  role         Role     @default(RESIDENT)
-  isActive     Boolean  @default(true)
-  refreshToken String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+enum VisitorType {
+  ONE_TIME
+  SCHEDULED
+  PERMANENT
+}
 
-  properties    Property[]
-  incidents     Incident[]     @relation("ReportedIncidents")
-  notifications Notification[]
-  sessions      Session[]
+enum EntryMethod {
+  QR_CODE
+  NATIONAL_ID
+  NAME
+  VEHICLE_PLATE
+  MANUAL
+}
+
+enum IncidentType {
+  SUSPICIOUS_ACTIVITY
+  VEHICLE_DAMAGE
+  LOST_ITEMS
+  EMERGENCY
+  OTHER
+}
+
+enum PropertyStatus {
+  ACTIVE
+  INACTIVE
+  UNDER_MAINTENANCE
+}
+
+enum PersonType {
+  VISITOR
+  EMPLOYEE
+  CONTRACTOR
+  FAMILY_MEMBER
+  RESIDENT
+}
+
+enum NotificationType {
+  VISITOR_ARRIVAL
+  VISITOR_DEPARTURE
+  EMPLOYEE_ARRIVAL
+  EMPLOYEE_DEPARTURE
+  AUTHORIZATION_REQUEST
+  AUTHORIZATION_APPROVED
+  AUTHORIZATION_CANCELLED
+  INCIDENT_REPORTED
+  SYSTEM_ALERT
+}
+
+enum AuthProvider {
+  CREDENTIALS
+  GOOGLE
+}
+
+// ============================================================
+// MODELS
+// ============================================================
+
+// ---- AUTH & USERS ----
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  passwordHash  String?        // nullable for OAuth-only accounts
+  name          String
+  phone         String?
+  role          Role           @default(PROPERTY_OWNER)
+  photo         String?
+  emailVerified Boolean        @default(false)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations
+  ownedProperties Property[]
+  authorizedVisitors Visitor[]      @relation("AuthorizedBy")
+  entriesAsGuard   Entry[]          @relation("GuardEntry")
+  incidents        Incident[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  refreshTokens    RefreshToken[]
+  accounts         Account[]
+  sessions         Session[]
+
+  @@index([email])
+  @@index([role])
+  @@index([name])
+  @@map("users")
+}
+
+model Account {
+  id                String       @id @default(uuid())
+  userId            String
+  provider          AuthProvider
+  providerAccountId String
+  refreshToken      String?
+  accessToken       String?
+  expiresAt         DateTime?
+  createdAt         DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
 }
 
 model Session {
-  id           String   @id @default(cuid())
-  userId       String
-  refreshToken String   @unique
-  deviceInfo   String?
-  ipAddress    String?
-  expiresAt    DateTime
-  createdAt    DateTime @default(now())
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([refreshToken])
+  @@index([token])
+  @@map("sessions")
 }
 
-// ─── Neighborhood & Properties ─────────────────────────────────
-
-model Neighborhood {
-  id        String   @id @default(cuid())
-  name      String
-  address   String
-  city      String
-  province  String
-  country   String   @default("Argentina")
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  properties Property[]
-  cameras    Camera[]
-  guards     Guard[]
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
 }
+
+model VerificationToken {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String   @unique
+  type       String   // "EMAIL_VERIFICATION" | "PASSWORD_RESET"
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("verification_tokens")
+}
+
+// ---- PROPERTIES ----
 
 model Property {
-  id             String   @id @default(cuid())
-  neighborhoodId String
-  ownerId        String
-  address        String
-  lotNumber      String?
-  propertyType   String   @default("house") // house, apartment, commercial
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id           String         @id @default(uuid())
+  ownerId      String
+  houseNumber  String
+  block        String
+  street       String
+  neighborhood String
+  status       PropertyStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 
-  neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
-  owner        User         @relation(fields: [ownerId], references: [id])
-  cameras      Camera[]
-  incidents    Incident[]   @relation("PropertyIncidents")
-  visits       Visit[]
+  // Relations
+  owner            User             @relation(fields: [ownerId], references: [id])
+  familyMembers    FamilyMember[]
+  visitors         Visitor[]
+  employees        Employee[]
+  contractors      Contractor[]
+  vehicles         Vehicle[]
+  entries          Entry[]
 
-  @@index([neighborhoodId])
   @@index([ownerId])
+  @@index([houseNumber, block, street])
+  @@index([neighborhood])
+  @@map("properties")
 }
 
-// ─── Surveillance ──────────────────────────────────────────────
+// ---- FAMILY MEMBERS ----
 
-enum CameraStatus {
-  ONLINE
-  OFFLINE
-  MAINTENANCE
-}
+model FamilyMember {
+  id           String   @id @default(uuid())
+  propertyId   String
+  fullName     String
+  nationalId   String?
+  phone        String
+  relationship String   // "SPOUSE" | "CHILD" | "PARENT" | "SIBLING" | "OTHER"
+  photo        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-model Camera {
-  id             String       @id @default(cuid())
-  neighborhoodId String
-  propertyId     String?
-  name           String
-  rtspUrl        String?
-  status         CameraStatus @default(ONLINE)
-  ipAddress      String?
-  location       String? // descripción de ubicación
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  vehicles  Vehicle[]
+  entries   Entry[]
 
-  neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
-  property     Property?    @relation(fields: [propertyId], references: [id])
-  recordings   Recording[]
-
-  @@index([neighborhoodId])
   @@index([propertyId])
-  @@index([status])
+  @@index([fullName])
+  @@index([nationalId])
+  @@map("family_members")
 }
 
-model Recording {
-  id        String    @id @default(cuid())
-  cameraId  String
-  startedAt DateTime
-  endedAt   DateTime?
-  fileUrl   String?
-  fileSize  Int?
-  duration  Int? // seconds
-  createdAt DateTime  @default(now())
+// ---- VISITORS ----
 
-  camera Camera @relation(fields: [cameraId], references: [id])
-
-  @@index([cameraId])
-  @@index([startedAt])
-}
-
-// ─── Incidents & Alerts ────────────────────────────────────────
-
-enum IncidentSeverity {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
-}
-
-enum IncidentStatus {
-  REPORTED
-  IN_PROGRESS
-  RESOLVED
-  DISMISSED
-}
-
-model Incident {
-  id           String           @id @default(cuid())
-  propertyId   String?
-  reportedById String
-  title        String
-  description  String
-  severity     IncidentSeverity @default(MEDIUM)
-  status       IncidentStatus   @default(REPORTED)
-  location     String?
-  imageUrl     String?
-  resolvedAt   DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-
-  property   Property? @relation("PropertyIncidents", fields: [propertyId], references: [id])
-  reportedBy User      @relation("ReportedIncidents", fields: [reportedById], references: [id])
-  alerts     Alert[]
-
-  @@index([status])
-  @@index([severity])
-  @@index([propertyId])
-  @@index([reportedById])
-}
-
-model Alert {
-  id         String    @id @default(cuid())
-  incidentId String
-  message    String
-  isRead     Boolean   @default(false)
-  readAt     DateTime?
-  createdAt  DateTime  @default(now())
-
-  incident Incident @relation(fields: [incidentId], references: [id])
-
-  @@index([incidentId])
-  @@index([isRead])
-}
-
-// ─── Guards & Patrols ──────────────────────────────────────────
-
-enum GuardStatus {
-  ON_DUTY
-  OFF_DUTY
-  ON_BREAK
-}
-
-enum PatrolStatus {
-  SCHEDULED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
-model Guard {
-  id             String      @id @default(cuid())
-  userId         String      @unique
-  neighborhoodId String
-  badgeNumber    String      @unique
-  status         GuardStatus @default(OFF_DUTY)
-  startedAt      DateTime?
+model Visitor {
+  id             String      @id @default(uuid())
+  propertyId     String
+  fullName       String
+  document       String?     // National ID or Passport
+  phone          String?
+  email          String?
+  vehiclePlate   String?
+  vehicleBrand   String?
+  vehicleModel   String?
+  photo          String?
+  notes          String?
+  authorizedById String
+  visitorType    VisitorType @default(ONE_TIME)
+  validFrom      DateTime
+  validUntil     DateTime
+  qrCode         String?     @unique
+  isActive       Boolean     @default(true)
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
-  patrols      Patrol[]
-
-  @@index([neighborhoodId])
-  @@index([status])
-}
-
-model Patrol {
-  id             String       @id @default(cuid())
-  guardId        String
-  neighborhoodId String
-  startedAt      DateTime
-  endedAt        DateTime?
-  status         PatrolStatus @default(SCHEDULED)
-  route          Json? // puntos de ruta GPS
-  notes          String?
-  createdAt      DateTime     @default(now())
-
-  guard Guard @relation(fields: [guardId], references: [id])
-
-  @@index([guardId])
-  @@index([status])
-  @@index([startedAt])
-}
-
-// ─── Visitors & Access ─────────────────────────────────────────
-
-enum VisitStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  ACTIVE
-  COMPLETED
-}
-
-model Visit {
-  id           String      @id @default(cuid())
-  propertyId   String
-  visitorName  String
-  visitorPhone String?
-  visitorPlate String?
-  purpose      String
-  status       VisitStatus @default(PENDING)
-  scheduledAt  DateTime
-  arrivedAt    DateTime?
-  departedAt   DateTime?
-  approvedById String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  property Property @relation(fields: [propertyId], references: [id])
+  // Relations
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  authorizedBy User     @relation("AuthorizedBy", fields: [authorizedById], references: [id])
+  entries      Entry[]
 
   @@index([propertyId])
-  @@index([status])
-  @@index([scheduledAt])
+  @@index([fullName])
+  @@index([document])
+  @@index([phone])
+  @@index([vehiclePlate])
+  @@index([validFrom, validUntil])
+  @@index([qrCode])
+  @@map("visitors")
 }
 
-// ─── Notifications ─────────────────────────────────────────────
+// ---- EMPLOYEES ----
 
-enum NotificationType {
-  ALERT
-  INCIDENT
-  VISIT
-  SYSTEM
+model Employee {
+  id           String   @id @default(uuid())
+  propertyId   String
+  fullName     String
+  nationalId   String?
+  phone        String
+  position     String
+  company      String
+  vehiclePlate String?
+  workSchedule String?   // JSON string for flexible scheduling
+  photo        String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  entries  Entry[]
+
+  @@index([propertyId])
+  @@index([fullName])
+  @@index([nationalId])
+  @@index([company])
+  @@index([phone])
+  @@map("employees")
 }
+
+// ---- CONTRACTORS ----
+
+model Contractor {
+  id              String   @id @default(uuid())
+  propertyId      String
+  company         String
+  employeeName    String
+  nationalId      String?
+  phone           String?
+  vehiclePlate    String?
+  vehicleBrand    String?
+  vehicleModel    String?
+  serviceType     String
+  workOrder       String?
+  authorizedUntil DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  entries  Entry[]
+
+  @@index([propertyId])
+  @@index([company])
+  @@index([employeeName])
+  @@map("contractors")
+}
+
+// ---- VEHICLES ----
+
+model Vehicle {
+  id          String    @id @default(uuid())
+  plate       String
+  brand       String
+  model       String
+  color       String?
+  ownerType   PersonType
+  propertyId  String?
+  ownerId     String?   // Polymorphic: familyMemberId, visitorId, etc.
+  familyMemberId String? // Direct FK for family member vehicles
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  property     Property?     @relation(fields: [propertyId], references: [id])
+  familyMember FamilyMember? @relation(fields: [familyMemberId], references: [id])
+
+  @@unique([plate, ownerType, ownerId])
+  @@index([plate])
+  @@index([propertyId])
+  @@index([familyMemberId])
+  @@map("vehicles")
+}
+
+// ---- ENTRIES (Entry/Exit Control) ----
+
+model Entry {
+  id             String      @id @default(uuid())
+  personType     PersonType
+  visitorId      String?
+  employeeId     String?
+  contractorId   String?
+  familyMemberId String?
+  guardId        String
+  propertyId     String?
+  gate           String
+  entryTime      DateTime    @default(now())
+  exitTime       DateTime?
+  entryMethod    EntryMethod @default(MANUAL)
+  photo          String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+
+  // Relations
+  guard        User        @relation("GuardEntry", fields: [guardId], references: [id])
+  property     Property?   @relation(fields: [propertyId], references: [id])
+  visitor      Visitor?    @relation(fields: [visitorId], references: [id])
+  employee     Employee?   @relation(fields: [employeeId], references: [id])
+  contractor   Contractor? @relation(fields: [contractorId], references: [id])
+  familyMember FamilyMember? @relation(fields: [familyMemberId], references: [id])
+
+  @@index([guardId])
+  @@index([propertyId])
+  @@index([visitorId])
+  @@index([employeeId])
+  @@index([entryTime])
+  @@index([exitTime])
+  @@index([gate])
+  @@index([personType])
+  @@map("entries")
+}
+
+// ---- INCIDENTS ----
+
+model Incident {
+  id          String       @id @default(uuid())
+  guardId     String
+  title       String
+  description String
+  incidentType IncidentType @default(OTHER)
+  photos      String[]     // Cloudinary URLs
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  guard User @relation(fields: [guardId], references: [id])
+
+  @@index([guardId])
+  @@index([incidentType])
+  @@index([createdAt])
+  @@map("incidents")
+}
+
+// ---- NOTIFICATIONS ----
 
 model Notification {
-  id        String           @id @default(cuid())
+  id        String           @id @default(uuid())
   userId    String
-  type      NotificationType @default(ALERT)
   title     String
-  body      String
-  data      Json? // payload adicional
+  message   String
+  type      NotificationType
+  data      Json?            // Additional context payload
   isRead    Boolean          @default(false)
-  readAt    DateTime?
   createdAt DateTime         @default(now())
 
+  // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
-  @@index([isRead])
+  @@index([userId, isRead])
   @@index([createdAt])
+  @@map("notifications")
+}
+
+// ---- AUDIT LOG ----
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String   // "LOGIN" | "LOGOUT" | "VISITOR_CREATED" | etc.
+  entityType String   // "USER" | "VISITOR" | "EMPLOYEE" | etc.
+  entityId   String?
+  details    Json?    // Changes, metadata
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

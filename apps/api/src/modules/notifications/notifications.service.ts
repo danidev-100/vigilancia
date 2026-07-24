@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@vigilancia/db';
 
 @Injectable()
 export class NotificationsService {
@@ -18,7 +18,7 @@ export class NotificationsService {
         title: dto.title,
         message: dto.message,
         type: dto.type,
-        data: (dto.data ?? undefined) as Prisma.InputJsonValue | undefined,
+        data: (dto.data ?? undefined) as Prisma.JsonValue | undefined,
       },
     });
 
